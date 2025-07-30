@@ -141,6 +141,10 @@ def get_transaction_summary(member_id: int, source: str = "personal"):
         query = query.is_("association_id", None)
     elif source == "association":
         query = query.not_.is_("association_id", None)
+    elif source == "all":
+        pass
+    else:
+        raise HTTPException(status_code=400, detail="Invalid source type. Use 'personal', 'association', or 'all'.")
 
     result = query.execute()
 
