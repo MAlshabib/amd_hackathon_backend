@@ -278,3 +278,28 @@ def create_investment_account(member_id: int):
         raise HTTPException(status_code=500, detail="Investment account creation returned no data")
     # Return success message
     return {"message": "Investment account created successfully."}
+
+@app.get('/members/{member_id}/advanced_summary')
+def advanced_summary(member_id: int):
+    member_data = supabase.table("members").select("*").eq("id", member_id).execute()
+    if not member_data.data:
+        raise HTTPException(status_code=404, detail="Member not found")
+    member = member_data.data[0]
+    transactions = supabase.table("transactions").select("*").eq("member_id", member_id).execute()
+    if not transactions.data:
+        raise HTTPException(status_code=404, detail="No transactions found for this member")
+    total_transactions = len(transactions.data)
+    total_amount = sum(txn['amount'] for txn in transactions.data)
+    categories = {}
+    for txn in transactions.data:
+        category = txn['category'] or 'uncategorized'
+        if category not in categories:
+            categories[category] = 0
+        categories[category] += txn['amount']
+    summary = {
+        "member": member,
+        "total_transactions": total_transactions,
+        "total_amount": total_amount,
+        "categories": categories
+    }
+    return summary
