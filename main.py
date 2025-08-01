@@ -7,7 +7,6 @@ import os
 import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import r2_score
-
 tadawul_old_prices = pd.read_csv("tadawul_stcks.csv")
 
 # Load environment variables
@@ -164,8 +163,6 @@ def get_transaction_summary(member_id: int, source: str = "personal"):
 tadawul_df = pd.read_csv("tadawul_stcks.csv")
 tadawul_df = tadawul_df.rename(columns=lambda x: x.strip())
 
-print(tadawul_df.groupby("symbol"))
-
 top_symbols = (
     tadawul_df.groupby("symbol")["volume_traded"]
     .sum()
@@ -181,6 +178,7 @@ tadawul_df = tadawul_df.sort_values('date')
 def predict_stock_with_trend(symbol: int, amount_of_money: float, price_today: float, days_to_invest: int):
     # Filter and prepare data for the specific stock
     stock_df = tadawul_df[tadawul_df['symbol'] == symbol].copy()
+    stock_name = stock_df['trading_name'].iloc[0] if not stock_df.empty else "Unknown Stock"
     # stock_df = df[df['symbol']].copy()
     stock_df = stock_df.sort_values('date')
     stock_df['days'] = (stock_df['date'] - stock_df['date'].min()).dt.days
@@ -232,7 +230,8 @@ def predict_stock_with_trend(symbol: int, amount_of_money: float, price_today: f
         "predicted_price": round(predicted_price, 2),
         "expected_profit": round(profit, 2),
         "expected_roi_percent": round(roi_percent, 2),
-        "model_r2_score": round(r2, 4)
+        "model_r2_score": round(r2, 4),
+        "stock_name": stock_name
     }
 
 @app.get("/stocks/best_stocks")
@@ -259,25 +258,44 @@ def top_3_filtered_stocks_to_invest(amount_of_money: float, days_to_invest: int)
     top_stocks = sorted(results, key=lambda x: x['expected_profit'], reverse=True)[:3]
     return top_stocks
 
+class InvestmentAccount(BaseModel):
+    name: str
+    member_id: int
 
-@app.post("/members/{member_id}/create_investment_account")
-def create_investment_account(member_id: int):
-    # Check if member exists
-    member = supabase.table("members").select("*").eq("id", member_id).execute()
-    if not member.data:
-        raise HTTPException(status_code=404, detail="Member not found")
-    # Check if investment account already exists
-    investment_account = supabase.table("investment_accounts").select("*").eq("member_id", member_id).execute()
-    if investment_account.data:
-        raise HTTPException(status_code=400, detail="Investment account already exists")
-    # Create investment account
-    result = supabase.table("investment_accounts").insert({"member_id": member_id}).execute
-    if result.error:
-        raise HTTPException(status_code=500, detail="Failed to create investment account")
-    if not result.data:
-        raise HTTPException(status_code=500, detail="Investment account creation returned no data")
-    # Return success message
-    return {"message": "Investment account created successfully."}
+@app.post("/members/create_investment_account")
+def create_investment_account(inv_account: InvestmentAccount):
+    try:
+        req = inv_account.dict()
+        print("Request:", req)
+
+        # Check if member exists
+        member = supabase.table("members").select("*").eq("id", req["member_id"]).execute()
+        if not member.data:
+            raise HTTPException(status_code=404, detail="Member not found")
+
+        member = member.data[0]
+        account_number_base = member.get("account_number", "ACCT")
+
+        account_data = {
+            "account_number": f"{account_number_base}-{req['member_id']:05d}",
+            "balance": 0.0,
+            "name": req['name']
+        }
+
+        result = supabase.table("investment_account").insert(account_data).execute()
+
+        if result.error:
+            print("Supabase Error:", result.error)
+            raise HTTPException(status_code=500, detail=result.error["message"])
+
+        return {"message": "Investment account created", "data": result.data}
+
+    except Exception as e:
+        print("💥 Internal Server Error:", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 @app.get('/members/{member_id}/advanced_summary')
 def advanced_summary(member_id: int):
@@ -303,3 +321,4 @@ def advanced_summary(member_id: int):
         "categories": categories
     }
     return summary
+
