@@ -9,12 +9,13 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import r2_score
 tadawul_old_prices = pd.read_csv("tadawul_stcks.csv")
 
-# Load environment variables
+
+# Load the environment variables
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Create Supabase client
+# Create supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
@@ -95,17 +96,17 @@ def get_association_members(association_id: int):
 def create_transaction(txn: Transaction):
     txn_data = txn.dict()
 
-    # Rule 1: Block withdrawals from associations
+    # No withdrawals from associations
     if txn_data.get("association_id") and txn_data["type"] == "withdrawal":
         raise HTTPException(status_code=400, detail="Cannot withdraw from an association")
 
-    # Rule 2: Auto-assign category if needed
+    # Auto-assign category if needed
     if txn_data.get("association_id"):
         txn_data["category"] = txn_data.get("category") or "association-deposit"
     else:
         txn_data["category"] = txn_data.get("category") or "general"
 
-    # Rule 3: Amount must be positive
+    # Amount must be positive
     if txn_data["amount"] <= 0:
         raise HTTPException(status_code=400, detail="Amount must be greater than zero")
 
@@ -179,7 +180,7 @@ def predict_stock_with_trend(symbol: int, amount_of_money: float, price_today: f
     # Filter and prepare data for the specific stock
     stock_df = tadawul_df[tadawul_df['symbol'] == symbol].copy()
     stock_name = stock_df['trading_name'].iloc[0] if not stock_df.empty else "Unknown Stock"
-    # stock_df = df[df['symbol']].copy()
+    
     stock_df = stock_df.sort_values('date')
     stock_df['days'] = (stock_df['date'] - stock_df['date'].min()).dt.days
 
@@ -235,7 +236,6 @@ def predict_stock_with_trend(symbol: int, amount_of_money: float, price_today: f
     }
 
 @app.get("/stocks/best_stocks")
-# Use only these symbols to find top 3 investments
 def top_3_filtered_stocks_to_invest(amount_of_money: float, days_to_invest: int):
     results = []
     for symbol in top_symbols:
@@ -293,32 +293,3 @@ def create_investment_account(inv_account: InvestmentAccount):
     except Exception as e:
         print("💥 Internal Server Error:", e)
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-@app.get('/members/{member_id}/advanced_summary')
-def advanced_summary(member_id: int):
-    member_data = supabase.table("members").select("*").eq("id", member_id).execute()
-    if not member_data.data:
-        raise HTTPException(status_code=404, detail="Member not found")
-    member = member_data.data[0]
-    transactions = supabase.table("transactions").select("*").eq("member_id", member_id).execute()
-    if not transactions.data:
-        raise HTTPException(status_code=404, detail="No transactions found for this member")
-    total_transactions = len(transactions.data)
-    total_amount = sum(txn['amount'] for txn in transactions.data)
-    categories = {}
-    for txn in transactions.data:
-        category = txn['category'] or 'uncategorized'
-        if category not in categories:
-            categories[category] = 0
-        categories[category] += txn['amount']
-    summary = {
-        "member": member,
-        "total_transactions": total_transactions,
-        "total_amount": total_amount,
-        "categories": categories
-    }
-    return summary
-
